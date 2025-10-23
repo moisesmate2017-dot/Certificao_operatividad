@@ -1,48 +1,31 @@
-<!-- templates/form.html -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="utf-8">
-    <title>Generar Certificado de Operatividad - Solgas</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <title>Generar Certificado</title>
 </head>
-<body class="bg-light">
-<div class="container py-4">
-    <div class="card shadow-sm">
-        <div class="card-body">
-            <h4 class="card-title mb-3">Generador de Certificado de Operatividad (GLP)</h4>
-            <form method="POST">
-                <div class="mb-3">
-                    <label class="form-label">Número de instalación (Ubicación)</label>
-                    <input class="form-control" type="number" name="ubicacion" required placeholder="Ej: 60061348">
-                </div>
+<body>
+    <h2>Generar Certificado de Operatividad</h2>
+    <form method="POST" action="/">
+        <label>Ubicación técnica (número de instalación):</label><br>
+        <input type="number" name="ubicacion" required><br><br>
 
-                <div class="mb-3">
-                    <label class="form-label">Fecha de inspección</label>
-                    <input class="form-control" type="date" name="fecha_inspeccion" required>
-                    <div class="form-text">La fecha de emisión se calculará como inspección + 7 días.</div>
-                </div>
+        <label>Ingeniero firmante:</label><br>
+        <select name="ingeniero">
+            <option value="CT">CT</option>
+            <option value="CC">CC</option>
+            <option value="ML">ML</option>
+            <option value="EP">EP</option>
+            <option value="AR">AR</option>
+        </select><br><br>
 
-                <div class="mb-3">
-                    <label class="form-label">Ingeniero responsable (firma)</label>
-                    <select class="form-select" name="ingeniero" required>
-                        <option value="CT">CT</option>
-                        <option value="ML">ML</option>
-                        <option value="CC">CC</option>
-                        <option value="EP">EP</option>
-                        <option value="AR">AR</option>
-                    </select>
-                </div>
+        <label>Fecha de inspección:</label><br>
+        <input type="date" name="fecha_inspeccion" required><br><br>
 
-                <button class="btn btn-primary" type="submit">Generar y descargar PDF</button>
-            </form>
-            <hr>
-            <p class="small text-muted">Asegúrate de tener en la carpeta raíz del proyecto:<br>
-                - <code>data_base.xlsm</code> (hoja <code>DATA</code>)<br>
-                - carpeta <code>static/</code> con <code>logo_solgaspro.png</code> y las firmas <code>CT-FIRMA.png</code>, <code>ML-FIRMA.png</code>, <code>CC-FIRMA.png</code>, <code>EP-FIRMA.png</code>, <code>AR-FIRMA.png</code>
-            </p>
-        </div>
-    </div>
-</div>
+        <button type="submit">Cargar Información</button>
+    </form>
 </body>
+</html>
+</body>
+
 </html>
