@@ -5,12 +5,11 @@ from fpdf import FPDF
 from datetime import datetime, timedelta
 import pandas as pd
 import os
-import uuid
 
 app = Flask(__name__)
-app.secret_key = "cambia_esto_por_una_clave_muy_segura"
+app.secret_key = "cambia_esto_por_una_clave_muy_segura"  # cámbiala en producción
 
-# = = = DEFINICION DE SUB PROCESOS = = =
+# ================= utilidades =================
 def limpiar_texto(texto):
     if not isinstance(texto, str):
         return texto
@@ -33,43 +32,42 @@ MESES_ES = {
     9: "setiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"
 }
 
-DATA_FILE = "data_base.xlsm"  # archivo original (no se sobrescribe)
-UPDATED_FILE_PREFIX = "data_base_updated"  # se añade timestamp al guardado
+DATA_FILE = "data_base.xlsm"               # archivo original (no se sobrescribe)
+UPDATED_FILE_PREFIX = "data_base_updated"  # prefijo para guardado con timestamp
 
-# --- RUTA: formulario inicial ---
+# ================= ruta principal (formulario) =================
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        ubicacion_input = request.form.get("ubicacion", "").strip()
-        fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # YYYY-MM-DD
+        ubicacion = request.form.get("ubicacion", "").strip()
+        fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # 'YYYY-MM-DD' from input type=date
         ingeniero = request.form.get("ingeniero", "CT").strip()
 
-        if not ubicacion_input or not fecha_inspeccion:
+        if not ubicacion or not fecha_inspeccion:
             flash("Complete número de instalación y fecha de inspección.", "danger")
             return redirect(url_for("index"))
 
         # reenviar mediante loader a /preview (POST)
         return render_template("preview_loader.html",
-                               ubicacion=ubicacion_input,
+                               ubicacion=ubicacion,
                                fecha_inspeccion=fecha_inspeccion,
                                ingeniero=ingeniero)
     return render_template("form.html")
 
-# --- RUTA: previsualización editable (carga datos desde Excel) ---
+# ================= preview: carga datos desde excel y muestra editable =================
 @app.route("/preview", methods=["POST"])
 def preview():
     ubicacion = request.form.get("ubicacion", "").strip()
-    fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # YYYY-MM-DD
+    fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()
     ingeniero = request.form.get("ingeniero", "CT").strip()
 
-    # validar fecha
+    # validar fecha_inspeccion
     try:
         fecha_dt = datetime.strptime(fecha_inspeccion, "%Y-%m-%d")
     except Exception:
         flash("Fecha de inspección inválida.", "danger")
         return redirect(url_for("index"))
 
-    # leer excel
     cliente = ""
     direccion = ""
     tanques = []
@@ -79,8 +77,9 @@ def preview():
             df = pd.read_excel(DATA_FILE, sheet_name="DATA", dtype=str)
         except Exception as e:
             flash(f"Error leyendo {DATA_FILE}: {e}", "danger")
-        else:
-            # filtrar comparando como strings
+            df = None
+        if df is not None:
+            # filtrar robusto: comparar como string
             if "Ubicacion" in df.columns:
                 df["Ubicacion_str"] = df["Ubicacion"].astype(str)
                 df_filtrado = df[df["Ubicacion_str"] == str(ubicacion)]
@@ -90,11 +89,12 @@ def preview():
             if not df_filtrado.empty:
                 cliente = df_filtrado.iloc[0].get("Nombre Titular", "") or ""
                 direccion = df_filtrado.iloc[0].get("Direccion", "") or ""
-                # recabar tanques de todas las filas encontradas
+                # extraer tanques de todas las filas encontradas
                 for _, row in df_filtrado.iterrows():
                     capacidad = row.get("Capacidad")
                     serie = row.get("Serie")
                     tipo = row.get("Tipo")
+                    # considerar como válido si capacidad y serie y tipo no son NaN/None
                     if pd.notna(capacidad) and capacidad != "nan" and serie and tipo:
                         tanques.append({
                             "tipo": str(tipo).strip(),
@@ -102,7 +102,7 @@ def preview():
                             "serie": str(serie).strip()
                         })
 
-    # calcular fecha de emisión = inspección + 7 días
+    # calcular fecha_emision (inspección + 7 días)
     fecha_emision_dt = fecha_dt + timedelta(days=7)
     mes_text = MESES_ES.get(fecha_emision_dt.month, fecha_emision_dt.strftime("%B").lower())
     fecha_emision = f"Lima, {fecha_emision_dt.day} de {mes_text} de {fecha_emision_dt.year}"
@@ -116,32 +116,33 @@ def preview():
                            fecha_emision=fecha_emision,
                            ingeniero=ingeniero)
 
-# --- RUTA: generar PDF con datos editados y opcionalmente guardar en base actualizada ---
+# ================= generar PDF (recibe datos editados) =================
 @app.route("/generar_pdf", methods=["POST"])
 def generar_pdf():
-    # Recibir datos del formulario editable
+    # campos básicos
     ubicacion = request.form.get("ubicacion", "").strip()
     cliente = request.form.get("cliente", "").strip()
     direccion = request.form.get("direccion", "").strip()
-    fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # YYYY-MM-DD
+    fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # may be YYYY-MM-DD
     fecha_emision = request.form.get("fecha_emision", "").strip()
     ingeniero = request.form.get("ingeniero", "CT").strip()
     guardar_en_base = request.form.get("guardar_en_base", "off") == "on"
 
+    # listas de tanques desde inputs tipo[], capacidad[], serie[]
     tipos = request.form.getlist("tipo[]")
     capacidades = request.form.getlist("capacidad[]")
     series = request.form.getlist("serie[]")
 
-    # construir lista de tanques a partir de arrays (ignorar filas vacías)
+    # construir lista de tanques (ignorar filas vacías)
     tanques = []
     for t, c, s in zip(tipos, capacidades, series):
         t_ = (t or "").strip()
         c_ = (c or "").strip()
         s_ = (s or "").strip()
-        if (t_ or c_ or s_):
+        if not (t_ == "" and c_ == "" and s_ == ""):
             tanques.append({"tipo": t_.upper(), "capacidad": c_, "serie": s_})
 
-    # validar y parsear fecha_inspeccion
+    # parsear fecha_inspeccion
     try:
         fecha_dt = datetime.strptime(fecha_inspeccion, "%Y-%m-%d")
     except Exception:
@@ -151,23 +152,19 @@ def generar_pdf():
             return "Fecha de inspección inválida", 400
     ano = fecha_dt.year
 
-    # si el usuario pidió guardar cambios en la base, crear data_base_updated_<ts>.xlsx
+    # guardar en base actualizada si se solicitó (no sobrescribimos .xlsm)
     if guardar_en_base:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         updated_name = f"{UPDATED_FILE_PREFIX}_{timestamp}.xlsx"
         try:
-            # intentar leer original para mantener otras filas
             if os.path.exists(DATA_FILE):
                 df_orig = pd.read_excel(DATA_FILE, sheet_name="DATA", dtype=str)
             else:
-                # crear df vacío con columnas esperadas
                 df_orig = pd.DataFrame(columns=["Ubicacion", "Nombre Titular", "Direccion", "Tipo", "Capacidad", "Serie"])
-
-            # eliminar filas de la misma ubicacion (comparando como string)
+            # eliminar filas de la misma ubicacion (comparar como string)
             df_orig["Ubicacion_str"] = df_orig["Ubicacion"].astype(str)
             df_sin = df_orig[df_orig["Ubicacion_str"] != str(ubicacion)].drop(columns=["Ubicacion_str"])
-
-            # crear nuevas filas con la información provista
+            # preparar nuevas filas
             nuevas = []
             if tanques:
                 for t in tanques:
@@ -188,16 +185,14 @@ def generar_pdf():
                     "Capacidad": "",
                     "Serie": ""
                 })
-
             df_nuevas = pd.DataFrame(nuevas)
             df_result = pd.concat([df_sin, df_nuevas], ignore_index=True, sort=False)
-            # guardar en XLSX (no se sobrescribe .xlsm)
             df_result.to_excel(updated_name, sheet_name="DATA", index=False)
             flash(f"Guardado en {updated_name}", "success")
         except Exception as e:
             flash(f"Error guardando base actualizada: {e}", "danger")
 
-    # agrupar tanques por tipo y capacidad (igual que en tu script original)
+    # agrupar tanques por tipo y capacidad (mismo formato textual que tu script original)
     grupo_tanques = defaultdict(lambda: defaultdict(list))
     for t in tanques:
         tipo = t.get("tipo", "").upper()
@@ -206,10 +201,8 @@ def generar_pdf():
         if tipo and cap and serie:
             grupo_tanques[tipo][cap].append(serie)
 
-    # formar partes textuales
     partes = []
     for tipo in sorted(grupo_tanques.keys()):
-        # ordenar capacidades de forma reverse según tu script
         for cap, series_list in sorted(grupo_tanques[tipo].items(), reverse=True):
             n = len(series_list)
             if n > 1:
@@ -226,13 +219,13 @@ def generar_pdf():
     else:
         texto_tanques = "No se registraron tanques asociados en la base de datos para esta ubicación."
 
-    # adecuacion de textos
+    # adecuacion textos
     cliente = limpiar_texto(cliente)
     direccion = limpiar_texto(direccion)
     texto_tanques = limpiar_texto(texto_tanques)
     fecha_emision = limpiar_texto(fecha_emision)
 
-    # determinar considerar_nuevo_formato: 0 si año de emisión == 2025 else 1
+    # determinar considerar_nuevo_formato (0 si año de emisión == 2025)
     try:
         partes_fecha = fecha_emision.split()
         ano_emision = int(partes_fecha[-1]) if partes_fecha[-1].isdigit() else fecha_dt.year
@@ -240,12 +233,12 @@ def generar_pdf():
         ano_emision = fecha_dt.year
     considerar_nuevo_formato = 0 if ano_emision == 2025 else 1
 
-    # === CREAR PDF ===
+    # ================= generar PDF (manteniendo estructura y textos originales) =================
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=40)
 
-    # --- ENCABEZADO
+    # encabezado y logo
     pdf.set_font("Helvetica", size=10)
     logo_path = os.path.join("static", "logo_solgaspro.png")
     if os.path.exists(logo_path):
@@ -254,6 +247,7 @@ def generar_pdf():
         except Exception:
             pass
 
+    # fecha emision a la derecha
     pdf.set_xy(140, 30)
     pdf.multi_cell(60, 1, fecha_emision, align='R')
 
@@ -267,12 +261,12 @@ def generar_pdf():
     pdf.cell(0, 1, "Presente:")
     pdf.ln(3)
 
-    # --- REFERENCIA
+    # referencia
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 1, "Referencia: Certificado de Operatividad Instalación GLP", align="R")
     pdf.ln(2)
 
-    # --- CUERPO
+    # cuerpo (texto principal)
     pdf.set_font("Helvetica", size=11)
     fecha_inspeccion_formato = fecha_dt.strftime("%d/%m/%Y")
     pdf.multi_cell(0, 4, f"""Estimado(a),
@@ -303,7 +297,7 @@ Sirva la presente para saludarlo(a) cordialmente e informarle que SOLGAS S.A. co
     pdf.ln(1)
     pdf.multi_cell(0,4,"Sin otro particular, \nAtentamente")
 
-    # --- FIRMA
+    # firmas
     firma_map = {
         "CC": ("CC-FIRMA.png", 85, 40),
         "ML": ("ML-FIRMA.png", 75, 60),
@@ -319,7 +313,7 @@ Sirva la presente para saludarlo(a) cordialmente e informarle que SOLGAS S.A. co
         except Exception:
             pass
 
-    # --- PIE DE PÁGINA
+    # pie de pagina
     pdf.set_text_color(150, 150, 150)
     pdf.ln(3)
     pdf.set_font("Helvetica", size=8)
@@ -329,16 +323,14 @@ Sirva la presente para saludarlo(a) cordialmente e informarle que SOLGAS S.A. co
     pdf.ln(4)
     pdf.cell(0, 1, "www.solgaspro.com.pe", align="C")
 
-    # === GUARDAR PDF CON NOMBRE UNICO ===
+    # guardar pdf con nombre unico
     cliente_limpio = str(cliente).replace("/", "-").replace("\\", "-").replace(":", "").replace("*", "").replace("?", "").replace('"', "").replace("<", "").replace(">", "").replace("|", "")
-    timestamp_pdf = datetime.now().strftime("%Y%m%d_%H%M%S")
-    nombre_archivo = f"CO_{ubicacion}_{cliente_limpio}_{ano}_{timestamp_pdf}.pdf"
+    nombre_archivo = f"CO_{ubicacion}_{cliente_limpio}_{ano}.pdf"
     pdf.output(nombre_archivo)
 
-    # enviar el archivo resultante para descarga
     return send_file(nombre_archivo, as_attachment=True)
 
-# tiny preview_loader para reenviar POST a /preview
+# tiny preview_loader (reenvía POST)
 @app.route("/preview_loader", methods=["POST"])
 def preview_loader():
     ubicacion = request.form.get("ubicacion", "")
@@ -350,5 +342,5 @@ def preview_loader():
                            ingeniero=ingeniero)
 
 if __name__ == "__main__":
-    # En producción con Render usa gunicorn: start command -> gunicorn app:app
+    # En Render: usar gunicorn app:app
     app.run(debug=True)
