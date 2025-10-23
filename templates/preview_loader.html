@@ -2,58 +2,56 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Editar Datos - Vista Previa</title>
-    <style>
-        table, td, th {
-            border: 1px solid black;
-            border-collapse: collapse;
-            padding: 6px;
-        }
-    </style>
+    <title>Previsualizar Instalación</title>
 </head>
 <body>
-    <h2>Vista Previa y Edición de Datos</h2>
+    <h1>Previsualización de datos</h1>
 
-    <form method="POST" action="/generar_pdf">
-        <!-- Campos ocultos para mantener datos originales -->
-        <input type="hidden" name="ubicacion" value="{{ ubicacion }}">
-        <input type="hidden" name="fecha_inspeccion" value="{{ fecha_inspeccion }}">
-        <input type="hidden" name="ingeniero" value="{{ ingeniero }}">
+    <form action="/generar_pdf" method="POST">
+        <label>Instalación:</label>
+        <input type="text" name="instalacion" value="{{ instalacion }}" required><br><br>
 
-        <label>Cliente:</label><br>
-        <input type="text" name="cliente" value="{{ cliente }}" required><br><br>
-
-        <label>Dirección:</label><br>
+        <label>Dirección:</label>
         <input type="text" name="direccion" value="{{ direccion }}" required><br><br>
 
-        <h3>Tanques de la instalación</h3>
-        <table>
+        <h3>Tanques:</h3>
+        <table border="1" cellpadding="5">
             <tr>
-                <th>Capacidad (galones)</th>
-                <th>Tipo</th>
-                <th>Serie</th>
+                <th>#</th>
+                <th>Código</th>
+                <th>Capacidad (GLP)</th>
                 <th>Eliminar</th>
             </tr>
-            {% for idx, t in enumerate(tanques) %}
+
+            {% for t in tanques %}
             <tr>
-                <td><input type="text" name="capacidad_{{ idx }}" value="{{ t.capacidad }}"></td>
-                <td><input type="text" name="tipo_{{ idx }}" value="{{ t.tipo }}"></td>
-                <td><input type="text" name="serie_{{ idx }}" value="{{ t.serie }}"></td>
-                <td><input type="checkbox" name="eliminar_{{ idx }}"></td>
+                <td>{{ loop.index }}</td>
+                <td>
+                    <input type="text" name="tanques[{{ loop.index0 }}][codigo]" value="{{ t.codigo }}">
+                </td>
+                <td>
+                    <input type="number" name="tanques[{{ loop.index0 }}][capacidad]" value="{{ t.capacidad }}">
+                </td>
+                <td>
+                    <input type="checkbox" name="eliminar_{{ loop.index0 }}">
+                </td>
             </tr>
             {% endfor %}
         </table>
 
-        <br>
-        <h3>Agregar nuevo tanque</h3>
+        <br><br>
+        <h4>Agregar nuevo tanque:</h4>
+        <label>Código:</label>
+        <input type="text" name="nuevo_codigo">
         <label>Capacidad:</label>
-        <input type="text" name="nuevo_cap"><br>
+        <input type="number" name="nuevo_capacidad">
+        <br><br>
 
-        <label>Tipo:</label>
-        <input type="text" name="nuevo_tipo"><br>
-
-        <label>Serie:</label>
-        <input type="text" name="nuevo_serie"><br><br>
+        <button type="submit">✅ Generar PDF</button>
+        <a href="/">⬅ Volver</a>
+    </form>
+</body>
+</html>
 
         <button type="submit">Generar PDF</button>
     </form>
