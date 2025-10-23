@@ -1,31 +1,42 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Generar Certificado</title>
+  <meta charset="UTF-8">
+  <title>Generar Certificado</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
-<body>
-    <h2>Generar Certificado de Operatividad</h2>
-    <form method="POST" action="/">
-        <label>Ubicación técnica (número de instalación):</label><br>
-        <input type="number" name="ubicacion" required><br><br>
+<body class="bg-light">
+  <div class="container py-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title">Generar Certificado de Operatividad</h2>
+        <form method="POST" action="/">
+          <div class="mb-3">
+            <label class="form-label">Ubicación técnica (número de instalación):</label>
+            <input class="form-control" type="text" name="ubicacion" required placeholder="Ej: 60061348">
+          </div>
 
-        <label>Ingeniero firmante:</label><br>
-        <select name="ingeniero">
-            <option value="CT">CT</option>
-            <option value="CC">CC</option>
-            <option value="ML">ML</option>
-            <option value="EP">EP</option>
-            <option value="AR">AR</option>
-        </select><br><br>
+          <div class="mb-3">
+            <label class="form-label">Ingeniero firmante:</label>
+            <select class="form-select" name="ingeniero">
+              <option value="CT">CT</option>
+              <option value="CC">CC</option>
+              <option value="ML">ML</option>
+              <option value="EP">EP</option>
+              <option value="AR">AR</option>
+            </select>
+          </div>
 
-        <label>Fecha de inspección:</label><br>
-        <input type="date" name="fecha_inspeccion" required><br><br>
+          <div class="mb-3">
+            <label class="form-label">Fecha de inspección:</label>
+            <input class="form-control" type="date" name="fecha_inspeccion" required>
+            <div class="form-text">La fecha de emisión se calculará automáticamente como inspección + 7 días.</div>
+          </div>
 
-        <button type="submit">Cargar Información</button>
-    </form>
+          <button class="btn btn-primary" type="submit">Cargar información y previsualizar</button>
+        </form>
+      </div>
+    </div>
+  </div>
 </body>
-</html>
-</body>
-
 </html>
