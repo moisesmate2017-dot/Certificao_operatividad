@@ -1,0 +1,4 @@
+flask
+fpdf==1.7.2
+pandas
+openpyxl
