@@ -1,150 +1,199 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <title>Previsualización - Editar datos</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta charset="utf-8" />
+  <title>Previsualización — Editar antes de generar</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
-    .invalid { border-color: #dc3545 !important; box-shadow: 0 0 0 .15rem rgba(220,53,69,.25); }
-    .table thead th { vertical-align: middle; }
+    :root{
+      --bg:#041022;
+      --card:#071226;
+      --muted:#9fb2c8;
+      --accent:#00d0ff;
+      --accent2:#0bb0ff;
+      --success:#5ef0a3;
+      --danger:#ff6b6b;
+      --glass: rgba(255,255,255,0.03);
+    }
+    *{box-sizing:border-box;font-family:Inter,system-ui,Arial,Helvetica,sans-serif}
+    body{margin:0;background:linear-gradient(180deg,var(--bg) 0%, #02121a 100%);color:#e9f6ff;min-height:100vh}
+    .wrap{max-width:1100px;margin:28px auto;padding:18px}
+    .card{background:linear-gradient(180deg,var(--card), #07162a);border-radius:12px;padding:20px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 10px 40px rgba(2,8,20,0.6)}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h2{margin:0;color:var(--accent);font-weight:700}
+    .meta{color:var(--muted);font-size:13px}
+    .grid{display:flex;gap:14px;margin-top:14px;flex-wrap:wrap}
+    .col{flex:1;min-width:260px}
+    label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
+    input[type=text], input[type=date], select{width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:#e6f6ff}
+    input[readonly]{background:linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.015));color:var(--muted)}
+    .table-wrap{margin-top:16px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.04)}
+    table{width:100%;border-collapse:collapse}
+    thead tr{background:linear-gradient(90deg, rgba(0,208,255,0.06), rgba(11,176,255,0.03))}
+    th, td{padding:10px 12px;text-align:left;font-size:14px;border-bottom:1px solid rgba(255,255,255,0.03);color:#dff7ff}
+    th{color:var(--muted);font-weight:600}
+    .small{font-size:13px;color:var(--muted)}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:0;cursor:pointer;font-weight:700}
+    .btn-add{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#01202a}
+    .btn-danger{background:transparent;border:1px solid rgba(255,80,80,0.14);color:var(--danger);padding:6px 10px;border-radius:8px}
+    .actions{display:flex;gap:10px;align-items:center}
+    .muted{color:var(--muted)}
+    .checkbox{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+
+    /* hover */
+    tr:hover td{background:rgba(255,255,255,0.01)}
+    .btn-add:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(0,208,255,0.08)}
+    .btn-danger:hover{background:rgba(255,80,80,0.04)}
+
+    @media (max-width:880px){
+      .grid{flex-direction:column}
+    }
   </style>
 </head>
-<body class="bg-light">
-<div class="container py-4">
-  <div class="card shadow-sm">
-    <div class="card-body">
-      <h4 class="card-title mb-3">Previsualización — Edite los datos antes de generar el PDF</h4>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <div>
+          <h2>Previsualización editable</h2>
+          <div class="meta">Revisa y edita los datos extraídos de la base antes de generar el PDF.</div>
+        </div>
+        <div class="meta">Fecha emisión: <strong style="color:var(--accent)">{{ fecha_emision }}</strong></div>
+      </header>
 
-      <form id="preview-form" method="POST" action="{{ url_for('generar_pdf') }}">
-        <!-- Hidden fields requeridos por app.py -->
+      <form id="previewForm" method="POST" action="{{ url_for('generar_pdf') }}">
+        <!-- hidden fields -->
         <input type="hidden" name="ubicacion" value="{{ ubicacion }}">
         <input type="hidden" name="fecha_inspeccion" value="{{ fecha_inspeccion }}">
         <input type="hidden" name="fecha_emision" value="{{ fecha_emision }}">
         <input type="hidden" name="ingeniero" value="{{ ingeniero }}">
 
-        <div class="mb-3">
-          <label class="form-label">Cliente</label>
-          <input class="form-control" type="text" name="cliente" id="cliente" value="{{ cliente }}" required>
+        <div class="grid">
+          <div class="col">
+            <label>Número de instalación (bloqueado)</label>
+            <input type="text" name="ubicacion_display" value="{{ ubicacion }}" readonly>
+            <div class="small muted" style="margin-top:6px">No editable — identifica la instalación en la base.</div>
+          </div>
+
+          <div class="col">
+            <label>Cliente</label>
+            <input type="text" name="cliente" value="{{ cliente }}" required>
+          </div>
+
+          <div class="col">
+            <label>Dirección</label>
+            <input type="text" name="direccion" value="{{ direccion }}" required>
+          </div>
         </div>
 
-        <div class="mb-3">
-          <label class="form-label">Dirección</label>
-          <input class="form-control" type="text" name="direccion" id="direccion" value="{{ direccion }}" required>
-        </div>
-
-        <hr>
-        <h5>Tanques (editar / eliminar / agregar)</h5>
-        <div class="table-responsive">
-          <table class="table table-sm" id="tanques-table">
+        <!-- tabla de tanques -->
+        <div class="table-wrap" role="region" aria-label="Tanques">
+          <table id="tanquesTable" aria-describedby="tablaAyuda">
             <thead>
               <tr>
-                <th>Tipo</th>
-                <th>Capacidad (gal)</th>
-                <th>Serie</th>
-                <th style="width:120px;">Acción</th>
+                <th style="width:22%">Tipo</th>
+                <th style="width:22%">Capacidad (gal)</th>
+                <th style="width:38%">Serie</th>
+                <th style="width:18%">Acción</th>
               </tr>
             </thead>
             <tbody>
               {% if tanques %}
                 {% for t in tanques %}
                 <tr>
-                  <td><input class="form-control form-control-sm" name="tipo[]" value="{{ t.tipo }}"></td>
-                  <td><input class="form-control form-control-sm capacidad" name="capacidad[]" value="{{ t.capacidad }}"></td>
-                  <td><input class="form-control form-control-sm serie" name="serie[]" value="{{ t.serie }}"></td>
-                  <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row-btn">Eliminar</button></td>
+                  <td><input name="tipo[]" type="text" value="{{ t.tipo }}" style="width:95%;padding:6px;border-radius:6px;background:transparent;border:0;color:#dff7ff"></td>
+                  <td><input name="capacidad[]" class="cap" type="text" value="{{ t.capacidad }}" style="width:95%;padding:6px;border-radius:6px;background:transparent;border:0;color:#dff7ff"></td>
+                  <td><input name="serie[]" class="serie" type="text" value="{{ t.serie }}" style="width:98%;padding:6px;border-radius:6px;background:transparent;border:0;color:#dff7ff"></td>
+                  <td class="actions"><button type="button" class="btn-danger" onclick="removeRow(this)">Eliminar</button></td>
                 </tr>
                 {% endfor %}
               {% else %}
+                <!-- fila vacía si no hay datos -->
                 <tr>
-                  <td><input class="form-control form-control-sm" name="tipo[]" value=""></td>
-                  <td><input class="form-control form-control-sm capacidad" name="capacidad[]" value=""></td>
-                  <td><input class="form-control form-control-sm serie" name="serie[]" value=""></td>
-                  <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row-btn">Eliminar</button></td>
+                  <td><input name="tipo[]" type="text" value=""></td>
+                  <td><input name="capacidad[]" class="cap" type="text" value=""></td>
+                  <td><input name="serie[]" class="serie" type="text" value=""></td>
+                  <td class="actions"><button type="button" class="btn-danger" onclick="removeRow(this)">Eliminar</button></td>
                 </tr>
               {% endif %}
             </tbody>
           </table>
         </div>
 
-        <div class="mb-3 d-flex gap-2">
-          <button type="button" id="add-row" class="btn btn-sm btn-secondary">Agregar tanque</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;gap:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <button type="button" class="btn btn-add" id="addRow">+ Agregar tanque</button>
+            <label class="checkbox"><input type="checkbox" name="guardar_en_base"> Guardar cambios en la base</label>
+          </div>
 
-          <label class="form-check form-check-inline align-items-center mb-0 ms-3">
-            <input class="form-check-input" type="checkbox" id="guardar_en_base" name="guardar_en_base">
-            <span class="form-check-label">Guardar cambios en la base (crea <code>data_base_updated_*.xlsx</code>)</span>
-          </label>
+          <div style="display:flex;gap:10px">
+            <a class="btn" href="{{ url_for('index') }}" style="background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.03);padding:8px 12px;border-radius:8px;text-decoration:none">Volver</a>
+            <button id="generateBtn" class="btn btn-add" type="submit">Confirmar y generar PDF</button>
+          </div>
         </div>
 
-        <div class="d-flex gap-2">
-          <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Volver</a>
-          <button id="confirm-btn" type="submit" class="btn btn-primary">Confirmar y generar PDF</button>
+        <div id="tablaAyuda" class="small muted" style="margin-top:10px">
+          Tip: Si dejas una fila con tipo/capacidad y sin serie, el sistema te pedirá completar el número de serie.
         </div>
-
-        <hr>
-        <small class="text-muted">Fecha de emisión calculada: {{ fecha_emision }}</small>
       </form>
     </div>
   </div>
-</div>
 
-<script>
-  // Eliminar fila
-  document.addEventListener('click', function(e){
-    if(e.target && e.target.classList.contains('remove-row-btn')){
-      const tr = e.target.closest('tr');
+  <script>
+    // eliminar fila
+    function removeRow(button){
+      const tr = button.closest('tr');
       tr.remove();
     }
-  });
 
-  // Agregar fila
-  document.getElementById('add-row').addEventListener('click', function(){
-    const tbody = document.querySelector('#tanques-table tbody');
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td><input class="form-control form-control-sm" name="tipo[]" value=""></td>
-      <td><input class="form-control form-control-sm capacidad" name="capacidad[]" value=""></td>
-      <td><input class="form-control form-control-sm serie" name="serie[]" value=""></td>
-      <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row-btn">Eliminar</button></td>
-    `;
-    tbody.appendChild(row);
-  });
-
-  // Validación previa al submit
-  document.getElementById('preview-form').addEventListener('submit', function(e){
-    let valid = true;
-    // quitar marcas previas
-    document.querySelectorAll('.capacidad, .serie').forEach(function(el){
-      el.classList.remove('invalid');
+    // agregar fila
+    document.getElementById('addRow').addEventListener('click', function(){
+      const tbody = document.querySelector('#tanquesTable tbody');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input name="tipo[]" type="text" value=""></td>
+        <td><input name="capacidad[]" class="cap" type="text" value=""></td>
+        <td><input name="serie[]" class="serie" type="text" value=""></td>
+        <td class="actions"><button type="button" class="btn-danger" onclick="removeRow(this)">Eliminar</button></td>
+      `;
+      tbody.appendChild(tr);
+      // focus en la nueva serie
+      tr.querySelector('input[name="serie[]"]').focus();
     });
 
-    // capacidad debe ser numérica si no está vacía
-    document.querySelectorAll('.capacidad').forEach(function(el){
-      const v = el.value.trim();
-      if(v !== "" && isNaN(Number(v))){
-        valid = false;
-        el.classList.add('invalid');
+    // validación antes de enviar
+    document.getElementById('previewForm').addEventListener('submit', function(e){
+      let ok = true;
+      // limpiar estilos
+      document.querySelectorAll('.cap, .serie').forEach(el => el.style.outline = 'none');
+
+      // validar capacidad numérica si no vacía
+      document.querySelectorAll('.cap').forEach(function(el){
+        const v = el.value.trim();
+        if(v !== "" && isNaN(Number(v.replace(',','.')))){
+          ok = false;
+          el.style.outline = '2px solid rgba(255,100,100,0.3)';
+        }
+      });
+
+      // si tipo o capacidad existe, serie no debe estar vacío
+      const rows = document.querySelectorAll('#tanquesTable tbody tr');
+      rows.forEach(function(r){
+        const tipo = r.querySelector('input[name="tipo[]"]').value.trim();
+        const cap = r.querySelector('input[name="capacidad[]"]').value.trim();
+        const serie = r.querySelector('input[name="serie[]"]').value.trim();
+        if((tipo !== "" || cap !== "") && serie === ""){
+          ok = false;
+          r.querySelector('input[name="serie[]"]').style.outline = '2px solid rgba(255,100,100,0.3)';
+        }
+      });
+
+      if(!ok){
+        e.preventDefault();
+        alert("Revise las filas: capacidades deben ser numéricas y las filas con tipo/capacidad requieren número de serie.");
       }
     });
-
-    // si hay tipo o capacidad, serie no puede quedar vacío
-    const rows = document.querySelectorAll('#tanques-table tbody tr');
-    rows.forEach(function(row){
-      const tipo = row.querySelector('input[name="tipo[]"]').value.trim();
-      const cap = row.querySelector('input[name="capacidad[]"]').value.trim();
-      const serie = row.querySelector('input[name="serie[]"]').value.trim();
-      if((tipo !== "" || cap !== "") && serie === ""){
-        valid = false;
-        row.querySelector('.serie').classList.add('invalid');
-      }
-    });
-
-    if(!valid){
-      e.preventDefault();
-      alert("Revise los campos: capacidad debe ser numérica y las filas con tipo/capacidad requieren un número de serie.");
-      return false;
-    }
-    return true;
-  });
-</script>
+  </script>
 </body>
 </html>
