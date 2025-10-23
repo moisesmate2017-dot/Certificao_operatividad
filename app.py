@@ -1,12 +1,14 @@
 # app.py
-from flask import Flask, render_template, request, send_file, abort
+from flask import Flask, render_template, request, send_file, redirect, url_for, flash
 from collections import defaultdict
 from fpdf import FPDF
 from datetime import datetime, timedelta
 import pandas as pd
 import os
+import uuid
 
 app = Flask(__name__)
+app.secret_key = "cambia_esto_por_una_clave_muy_segura"
 
 # = = = DEFINICION DE SUB PROCESOS = = =
 def limpiar_texto(texto):
@@ -25,213 +27,328 @@ def limpiar_texto(texto):
              .replace("ñ", "n").replace("Ñ", "N")
     )
 
-# Helper: nombres de meses en español (minuscula)
 MESES_ES = {
     1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
     5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
     9: "setiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"
 }
 
-# RUTA DEL FORMULARIO Y PROCESO
+DATA_FILE = "data_base.xlsm"  # archivo original (no se sobrescribe)
+UPDATED_FILE_PREFIX = "data_base_updated"  # se añade timestamp al guardado
+
+# --- RUTA: formulario inicial ---
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        # === INPUTS desde el formulario ===
+        ubicacion_input = request.form.get("ubicacion", "").strip()
+        fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # YYYY-MM-DD
+        ingeniero = request.form.get("ingeniero", "CT").strip()
+
+        if not ubicacion_input or not fecha_inspeccion:
+            flash("Complete número de instalación y fecha de inspección.", "danger")
+            return redirect(url_for("index"))
+
+        # reenviar mediante loader a /preview (POST)
+        return render_template("preview_loader.html",
+                               ubicacion=ubicacion_input,
+                               fecha_inspeccion=fecha_inspeccion,
+                               ingeniero=ingeniero)
+    return render_template("form.html")
+
+# --- RUTA: previsualización editable (carga datos desde Excel) ---
+@app.route("/preview", methods=["POST"])
+def preview():
+    ubicacion = request.form.get("ubicacion", "").strip()
+    fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # YYYY-MM-DD
+    ingeniero = request.form.get("ingeniero", "CT").strip()
+
+    # validar fecha
+    try:
+        fecha_dt = datetime.strptime(fecha_inspeccion, "%Y-%m-%d")
+    except Exception:
+        flash("Fecha de inspección inválida.", "danger")
+        return redirect(url_for("index"))
+
+    # leer excel
+    cliente = ""
+    direccion = ""
+    tanques = []
+
+    if os.path.exists(DATA_FILE):
         try:
-            ubicacion_input = int(request.form.get("ubicacion"))
-        except Exception:
-            return "Número de instalación inválido", 400
-
-        ingeniero = request.form.get("ingeniero", "CT")
-        fecha_inspeccion_str = request.form.get("fecha_inspeccion")  # esperado 'YYYY-MM-DD' desde <input type="date">
-
-        # validar fecha_inspeccion
-        try:
-            fecha_dt = datetime.strptime(fecha_inspeccion_str, "%Y-%m-%d")
-        except Exception:
-            return "Fecha de inspección inválida. Use formato de calendario.", 400
-
-        # Calcular fecha_emision = fecha_inspeccion + 7 dias
-        fecha_emision_dt = fecha_dt + timedelta(days=7)
-        # Formato textual igual al ejemplo: "Lima, 19 de julio de 2022"
-        mes_text = MESES_ES.get(fecha_emision_dt.month, fecha_emision_dt.strftime("%B").lower())
-        fecha_emision = f"Lima, {fecha_emision_dt.day} de {mes_text} de {fecha_emision_dt.year}"
-
-        # considerar_nuevo_formato: 0 si año de emisión == 2025, else 1
-        considerar_nuevo_formato = 0 if fecha_emision_dt.year == 2025 else 1
-
-        # === LEER EXCEL igual que tu script original ===
-        excel_path = "data_base.xlsm"
-        if not os.path.exists(excel_path):
-            return "No se encontró el archivo data_base.xlsm en el directorio.", 500
-
-        try:
-            df = pd.read_excel(excel_path, sheet_name="DATA")
+            df = pd.read_excel(DATA_FILE, sheet_name="DATA", dtype=str)
         except Exception as e:
-            return f"Error leyendo data_base.xlsm: {e}", 500
+            flash(f"Error leyendo {DATA_FILE}: {e}", "danger")
+        else:
+            # filtrar comparando como strings
+            if "Ubicacion" in df.columns:
+                df["Ubicacion_str"] = df["Ubicacion"].astype(str)
+                df_filtrado = df[df["Ubicacion_str"] == str(ubicacion)]
+            else:
+                df_filtrado = pd.DataFrame()
 
-        # === FILTRAR DATOS DE LA UBICACIÓN ===
-        df_filtrado = df[df["Ubicacion"] == ubicacion_input]
-        if df_filtrado.empty:
-            return f"No se ha podido obtener el dato para la ubicación técnica {ubicacion_input}.", 404
+            if not df_filtrado.empty:
+                cliente = df_filtrado.iloc[0].get("Nombre Titular", "") or ""
+                direccion = df_filtrado.iloc[0].get("Direccion", "") or ""
+                # recabar tanques de todas las filas encontradas
+                for _, row in df_filtrado.iterrows():
+                    capacidad = row.get("Capacidad")
+                    serie = row.get("Serie")
+                    tipo = row.get("Tipo")
+                    if pd.notna(capacidad) and capacidad != "nan" and serie and tipo:
+                        tanques.append({
+                            "tipo": str(tipo).strip(),
+                            "capacidad": str(capacidad).strip(),
+                            "serie": str(serie).strip()
+                        })
 
-        cliente = df_filtrado.iloc[0][("Nombre Titular")]
-        direccion = df_filtrado.iloc[0]["Direccion"]
-        texto_adicional = """(1) En aras de mantener el estricto cumplimiento del marco normativo vigente, y en caso requieran hacer alguna modificación en el área que se encuentra alrededor de la zona de almacenamiento de tanques de GLP como: instalar equipos eléctricos, cámaras de seguridad, iluminación, tomacorrientes, edificaciones contiguas, equipos de aire acondicionado, cableado eléctrico, ductos, sumideros, almacenar materiales, construcción de muros perimetrales, etc. tienen la obligación de comunicar previamente al equipo técnico de Solgas lo pertinente, a fin de que puedan recibir la asesoría técnica y validación correspondiente, de tal manera que, se evite incurrir en algunos incumplimientos normativos que puedan ser materia de suspensión de la Ficha de Registro y sanciones pecuniarias por parte del ente fiscalizador, así como evitar cualquier riesgo innecesario en la instalación; cabe precisar que en caso de no informar acerca de las modificaciones que realicen en la instalación, usted será el único y exclusivo responsable por las consecuencias que se deriven de su accionar."""
+    # calcular fecha de emisión = inspección + 7 días
+    fecha_emision_dt = fecha_dt + timedelta(days=7)
+    mes_text = MESES_ES.get(fecha_emision_dt.month, fecha_emision_dt.strftime("%B").lower())
+    fecha_emision = f"Lima, {fecha_emision_dt.day} de {mes_text} de {fecha_emision_dt.year}"
 
-        # === CREAR LISTA DE TANQUES ===
-        tanques = []
-        for _, row in df_filtrado.iterrows():
-            capacidad = row.get("Capacidad")
-            serie = str(row.get("Serie")).strip()
-            tipo = str(row.get("Tipo")).strip().upper()
+    return render_template("preview.html",
+                           ubicacion=ubicacion,
+                           cliente=cliente,
+                           direccion=direccion,
+                           tanques=tanques,
+                           fecha_inspeccion=fecha_inspeccion,
+                           fecha_emision=fecha_emision,
+                           ingeniero=ingeniero)
 
-            if pd.notna(capacidad) and serie and tipo:
-                tanques.append({
-                    "capacidad": capacidad,
-                    "serie": serie,
-                    "tipo": tipo
+# --- RUTA: generar PDF con datos editados y opcionalmente guardar en base actualizada ---
+@app.route("/generar_pdf", methods=["POST"])
+def generar_pdf():
+    # Recibir datos del formulario editable
+    ubicacion = request.form.get("ubicacion", "").strip()
+    cliente = request.form.get("cliente", "").strip()
+    direccion = request.form.get("direccion", "").strip()
+    fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # YYYY-MM-DD
+    fecha_emision = request.form.get("fecha_emision", "").strip()
+    ingeniero = request.form.get("ingeniero", "CT").strip()
+    guardar_en_base = request.form.get("guardar_en_base", "off") == "on"
+
+    tipos = request.form.getlist("tipo[]")
+    capacidades = request.form.getlist("capacidad[]")
+    series = request.form.getlist("serie[]")
+
+    # construir lista de tanques a partir de arrays (ignorar filas vacías)
+    tanques = []
+    for t, c, s in zip(tipos, capacidades, series):
+        t_ = (t or "").strip()
+        c_ = (c or "").strip()
+        s_ = (s or "").strip()
+        if (t_ or c_ or s_):
+            tanques.append({"tipo": t_.upper(), "capacidad": c_, "serie": s_})
+
+    # validar y parsear fecha_inspeccion
+    try:
+        fecha_dt = datetime.strptime(fecha_inspeccion, "%Y-%m-%d")
+    except Exception:
+        try:
+            fecha_dt = datetime.strptime(fecha_inspeccion, "%d/%m/%Y")
+        except Exception:
+            return "Fecha de inspección inválida", 400
+    ano = fecha_dt.year
+
+    # si el usuario pidió guardar cambios en la base, crear data_base_updated_<ts>.xlsx
+    if guardar_en_base:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        updated_name = f"{UPDATED_FILE_PREFIX}_{timestamp}.xlsx"
+        try:
+            # intentar leer original para mantener otras filas
+            if os.path.exists(DATA_FILE):
+                df_orig = pd.read_excel(DATA_FILE, sheet_name="DATA", dtype=str)
+            else:
+                # crear df vacío con columnas esperadas
+                df_orig = pd.DataFrame(columns=["Ubicacion", "Nombre Titular", "Direccion", "Tipo", "Capacidad", "Serie"])
+
+            # eliminar filas de la misma ubicacion (comparando como string)
+            df_orig["Ubicacion_str"] = df_orig["Ubicacion"].astype(str)
+            df_sin = df_orig[df_orig["Ubicacion_str"] != str(ubicacion)].drop(columns=["Ubicacion_str"])
+
+            # crear nuevas filas con la información provista
+            nuevas = []
+            if tanques:
+                for t in tanques:
+                    nuevas.append({
+                        "Ubicacion": ubicacion,
+                        "Nombre Titular": cliente,
+                        "Direccion": direccion,
+                        "Tipo": t.get("tipo", ""),
+                        "Capacidad": t.get("capacidad", ""),
+                        "Serie": t.get("serie", "")
+                    })
+            else:
+                nuevas.append({
+                    "Ubicacion": ubicacion,
+                    "Nombre Titular": cliente,
+                    "Direccion": direccion,
+                    "Tipo": "",
+                    "Capacidad": "",
+                    "Serie": ""
                 })
 
-        # === EXTRAER AÑO DE INSPECCIÓN ===
-        fecha_inspeccion_formato = fecha_dt.strftime("%d/%m/%Y")
-        ano = fecha_dt.year
+            df_nuevas = pd.DataFrame(nuevas)
+            df_result = pd.concat([df_sin, df_nuevas], ignore_index=True, sort=False)
+            # guardar en XLSX (no se sobrescribe .xlsm)
+            df_result.to_excel(updated_name, sheet_name="DATA", index=False)
+            flash(f"Guardado en {updated_name}", "success")
+        except Exception as e:
+            flash(f"Error guardando base actualizada: {e}", "danger")
 
-        # === AGRUPAR TANQUES POR (TIPO, CAPACIDAD) ===
-        grupo_tanques = defaultdict(lambda: defaultdict(list))
-        for t in tanques:
-            grupo_tanques[t["tipo"]][t["capacidad"]].append(t["serie"])
+    # agrupar tanques por tipo y capacidad (igual que en tu script original)
+    grupo_tanques = defaultdict(lambda: defaultdict(list))
+    for t in tanques:
+        tipo = t.get("tipo", "").upper()
+        cap = t.get("capacidad", "")
+        serie = t.get("serie", "")
+        if tipo and cap and serie:
+            grupo_tanques[tipo][cap].append(serie)
 
-        # === FORMATEAR TEXTO DE TANQUES ===
-        partes = []
-        for tipo in sorted(grupo_tanques.keys()):
-            # sorted(...items(), reverse=True) tal como tu script
-            for cap, series in sorted(grupo_tanques[tipo].items(), reverse=True):
-                n = len(series)
-                if n > 1:
-                    # Aquí replicamos exactamente tu lógica de unir series
-                    serie_str = " y ".join([", ".join(series[:-1]), series[-1]])
-                else:
-                    serie_str = series[0]
-                tipo_lower = tipo.lower()
-                plural = "" if n == 1 else "s"
-                texto = f"{n} tanque{plural} {tipo_lower}{plural} de {cap} galones de GLP con número{'s' if n > 1 else ''} de serie {serie_str}"
-                partes.append(texto)
+    # formar partes textuales
+    partes = []
+    for tipo in sorted(grupo_tanques.keys()):
+        # ordenar capacidades de forma reverse según tu script
+        for cap, series_list in sorted(grupo_tanques[tipo].items(), reverse=True):
+            n = len(series_list)
+            if n > 1:
+                serie_str = " y ".join([", ".join(series_list[:-1]), series_list[-1]])
+            else:
+                serie_str = series_list[0]
+            tipo_lower = tipo.lower()
+            plural = "" if n == 1 else "s"
+            texto = f"{n} tanque{plural} {tipo_lower}{plural} de {cap} galones de GLP con número{'s' if n > 1 else ''} de serie {serie_str}"
+            partes.append(texto)
 
-        if partes:
-            texto_tanques = "Se inspeccionaron " + ", ".join(partes) + ". Se comprobó que los tanques no cuentan con abolladuras, hendiduras o áreas en estado avanzado de abrasión, erosión o corrosión. Asimismo, se sometió a inspección los accesorios del tanque comprobando su correcto funcionamiento y hermeticidad."
-        else:
-            texto_tanques = "No se registraron tanques asociados en la base de datos para esta ubicación."
+    if partes:
+        texto_tanques = "Se inspeccionaron " + ", ".join(partes) + ". Se comprobó que los tanques no cuentan con abolladuras, hendiduras o áreas en estado avanzado de abrasión, erosión o corrosión. Asimismo, se sometió a inspección los accesorios del tanque comprobando su correcto funcionamiento y hermeticidad."
+    else:
+        texto_tanques = "No se registraron tanques asociados en la base de datos para esta ubicación."
 
-        # = = = ADECUACION DE TEXTOS = = =
-        cliente = limpiar_texto(cliente)
-        direccion = limpiar_texto(direccion)
-        texto_tanques = limpiar_texto(texto_tanques)
-        fecha_emision = limpiar_texto(fecha_emision)
+    # adecuacion de textos
+    cliente = limpiar_texto(cliente)
+    direccion = limpiar_texto(direccion)
+    texto_tanques = limpiar_texto(texto_tanques)
+    fecha_emision = limpiar_texto(fecha_emision)
 
-        # === CREAR PDF ===
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_auto_page_break(auto=True, margin=40)
+    # determinar considerar_nuevo_formato: 0 si año de emisión == 2025 else 1
+    try:
+        partes_fecha = fecha_emision.split()
+        ano_emision = int(partes_fecha[-1]) if partes_fecha[-1].isdigit() else fecha_dt.year
+    except Exception:
+        ano_emision = fecha_dt.year
+    considerar_nuevo_formato = 0 if ano_emision == 2025 else 1
 
-        # --- ENCABEZADO (manteniendo exactamente parámetros del ejemplo)
-        pdf.set_font("Helvetica", size=10)
+    # === CREAR PDF ===
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=40)
 
-        logo_path = os.path.join("static", "logo_solgaspro.png")
-        if os.path.exists(logo_path):
+    # --- ENCABEZADO
+    pdf.set_font("Helvetica", size=10)
+    logo_path = os.path.join("static", "logo_solgaspro.png")
+    if os.path.exists(logo_path):
+        try:
             pdf.image(logo_path, x=10, y=10, w=55)
-        # si no existe logo, seguimos sin error
+        except Exception:
+            pass
 
-        pdf.set_xy(140, 30)
-        pdf.multi_cell(60, 1, fecha_emision, align='R')
+    pdf.set_xy(140, 30)
+    pdf.multi_cell(60, 1, fecha_emision, align='R')
 
-        pdf.ln(3)
-        pdf.cell(0, 1, "Señor(a):")
-        pdf.ln(6)
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 1, cliente)
-        pdf.ln(6)
-        pdf.set_font("Helvetica", size=10)
-        pdf.cell(0, 1, "Presente:")
-        pdf.ln(3)
+    pdf.ln(3)
+    pdf.cell(0, 1, "Señor(a):")
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 1, cliente)
+    pdf.ln(6)
+    pdf.set_font("Helvetica", size=10)
+    pdf.cell(0, 1, "Presente:")
+    pdf.ln(3)
 
-        # --- REFERENCIA
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 1, "Referencia: Certificado de Operatividad Instalación GLP", align="R")
-        pdf.ln(2)
+    # --- REFERENCIA
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 1, "Referencia: Certificado de Operatividad Instalación GLP", align="R")
+    pdf.ln(2)
 
-        # --- CUERPO (texto principal, manteniendo el texto original)
-        pdf.set_font("Helvetica", size=11)
-        pdf.multi_cell(0, 4, f"""Estimado(a),
+    # --- CUERPO
+    pdf.set_font("Helvetica", size=11)
+    fecha_inspeccion_formato = fecha_dt.strftime("%d/%m/%Y")
+    pdf.multi_cell(0, 4, f"""Estimado(a),
 
 Sirva la presente para saludarlo(a) cordialmente e informarle que SOLGAS S.A. con fecha {fecha_inspeccion_formato} ha realizado los trabajos de Mantenimiento Preventivo Anual en la instalación de la zona del tanque de GLP y las redes de media presión en la dirección {direccion}, en cumplimiento de la Norma Técnica Peruana NTP 321.123 (REVISADA 2025) de instalaciones de consumidores directos (Capítulo 5.1.16.1) y de acuerdo con los estándares de seguridad y calidad de la empresa.""")
 
+    pdf.ln(3)
+    pdf.multi_cell(0, 4, texto_tanques)
+
+    pdf.ln(3)
+    pdf.multi_cell(0, 4, """Asimismo, se realizó la inspección, revisión y mantenimiento de los reguladores de 1era etapa, verificando que se encuentran en condiciones seguras de operación.""")
+
+    pdf.ln(3)
+    pdf.multi_cell(0, 4, """Los tanques son recipientes a presión fabricados de acuerdo con el Código ASME Sección VIII, API 510 con altos estándares internacionales de seguridad y calidad.""")
+
+    pdf.ln(3)
+    pdf.multi_cell(0, 4, """Es importante indicar que el tanque instalado por Solgas S.A. se encuentra cubierto por una póliza de Responsabilidad Civil Extracontractual de hasta 733 UIT.""")
+
+    pdf.ln(3)
+    pdf.multi_cell(0, 4, "El presente Certificado de Operatividad tiene un periodo de vigencia de un año.")
+
+    texto_adicional = """(1) En aras de mantener el estricto cumplimiento del marco normativo vigente, y en caso requieran hacer alguna modificación en el área que se encuentra alrededor de la zona de almacenamiento de tanques de GLP como: instalar equipos eléctricos, cámaras de seguridad, iluminación, tomacorrientes, edificaciones contiguas, equipos de aire acondicionado, cableado eléctrico, ductos, sumideros, almacenar materiales, construcción de muros perimetrales, etc. tienen la obligación de comunicar previamente al equipo técnico de Solgas lo pertinente, a fin de que puedan recibir la asesoría técnica y validación correspondiente, de tal manera que, se evite incurrir en algunos incumplimientos normativos que puedan ser materia de suspensión de la Ficha de Registro y sanciones pecuniarias por parte del ente fiscalizador, así como evitar cualquier riesgo innecesario en la instalación; cabe precisar que en caso de no informar acerca de las modificaciones que realicen en la instalación, usted será el único y exclusivo responsable por las consecuencias que se deriven de su accionar."""
+
+    if considerar_nuevo_formato == 0:
         pdf.ln(3)
-        pdf.multi_cell(0, 4, texto_tanques)
+        pdf.multi_cell(0,4,texto_adicional)
 
-        pdf.ln(3)
-        pdf.multi_cell(0, 4, """Asimismo, se realizó la inspección, revisión y mantenimiento de los reguladores de 1era etapa, verificando que se encuentran en condiciones seguras de operación.""")
+    pdf.ln(1)
+    pdf.multi_cell(0,4,"Sin otro particular, \nAtentamente")
 
-        pdf.ln(3)
-        pdf.multi_cell(0, 4, """Los tanques son recipientes a presión fabricados de acuerdo con el Código ASME Sección VIII, API 510 con altos estándares internacionales de seguridad y calidad.""")
+    # --- FIRMA
+    firma_map = {
+        "CC": ("CC-FIRMA.png", 85, 40),
+        "ML": ("ML-FIRMA.png", 75, 60),
+        "CT": ("CT-FIRMA.png", 85, 40),
+        "EP": ("EP-FIRMA.png", 80, 40),
+        "AR": ("AR-FIRMA.png", 85, 40),
+    }
+    firma_file, firma_x, firma_w = firma_map.get(ingeniero, ("CT-FIRMA.png", 85, 40))
+    firma_path = os.path.join("static", firma_file)
+    if os.path.exists(firma_path):
+        try:
+            pdf.image(firma_path, x=firma_x, w=firma_w)
+        except Exception:
+            pass
 
-        pdf.ln(3)
-        pdf.multi_cell(0, 4, """Es importante indicar que el tanque instalado por Solgas S.A. se encuentra cubierto por una póliza de Responsabilidad Civil Extracontractual de hasta 733 UIT.""")
+    # --- PIE DE PÁGINA
+    pdf.set_text_color(150, 150, 150)
+    pdf.ln(3)
+    pdf.set_font("Helvetica", size=8)
+    pdf.cell(0, 1, "Jr. Vittore Scarpazza Carpaccio N° 250 Piso 7, San Borja", align="C")
+    pdf.ln(4)
+    pdf.cell(0, 1, "Telf: (+511) 613-3330", align="C")
+    pdf.ln(4)
+    pdf.cell(0, 1, "www.solgaspro.com.pe", align="C")
 
-        pdf.ln(3)
-        pdf.multi_cell(0, 4, "El presente Certificado de Operatividad tiene un periodo de vigencia de un año.")
+    # === GUARDAR PDF CON NOMBRE UNICO ===
+    cliente_limpio = str(cliente).replace("/", "-").replace("\\", "-").replace(":", "").replace("*", "").replace("?", "").replace('"', "").replace("<", "").replace(">", "").replace("|", "")
+    timestamp_pdf = datetime.now().strftime("%Y%m%d_%H%M%S")
+    nombre_archivo = f"CO_{ubicacion}_{cliente_limpio}_{ano}_{timestamp_pdf}.pdf"
+    pdf.output(nombre_archivo)
 
-        if considerar_nuevo_formato == 0 :
-            pdf.ln(3)
-            pdf.multi_cell(0,4,texto_adicional)
+    # enviar el archivo resultante para descarga
+    return send_file(nombre_archivo, as_attachment=True)
 
-        pdf.ln(1)
-        pdf.multi_cell(0,4,"Sin otro particular, \nAtentamente")
-
-        # --- FIRMA (mismos nombres de archivos que en tu script)
-        firma_map = {
-            "CC": ("CC-FIRMA.png", 85, 40),
-            "ML": ("ML-FIRMA.png", 75, 60),
-            "CT": ("CT-FIRMA.png", 85, 40),
-            "EP": ("EP-FIRMA.png", 80, 40),
-            "AR": ("AR-FIRMA.png", 85, 40),
-        }
-        firma_file = firma_map.get(ingeniero, ("CT-FIRMA.png", 85, 40))[0]
-        firma_x = firma_map.get(ingeniero, ("CT-FIRMA.png", 85, 40))[1]
-        firma_w = firma_map.get(ingeniero, ("CT-FIRMA.png", 85, 40))[2]
-
-        firma_path = os.path.join("static", firma_file)
-        if os.path.exists(firma_path):
-            # intentamos colocar la imagen de la firma, sin forzar y permitiendo que FPDF la ubique verticalmente
-            try:
-                pdf.image(firma_path, x=firma_x, w=firma_w)
-            except Exception:
-                # si por alguna razon falla la insercion, la ignoramos y seguimos
-                pass
-
-        # --- PIE DE PÁGINA
-        pdf.set_text_color(150, 150, 150)
-        pdf.ln(3)
-        pdf.set_font("Helvetica", size=8)
-        pdf.cell(0, 1, "Jr. Vittore Scarpazza Carpaccio N° 250 Piso 7, San Borja", align="C")
-        pdf.ln(4)
-        pdf.cell(0, 1, "Telf: (+511) 613-3330", align="C")
-        pdf.ln(4)
-        pdf.cell(0, 1, "www.solgaspro.com.pe", align="C")
-
-        # === GUARDAR PDF CON NOMBRE PERSONALIZADO ===
-        cliente_limpio = str(cliente).replace("/", "-").replace("\\", "-").replace(":", "").replace("*", "").replace("?", "").replace('"', "").replace("<", "").replace(">", "").replace("|", "")
-        nombre_archivo = f"CO_{ubicacion_input}_{cliente_limpio}_{ano}.pdf"
-
-        # guardar en el directorio actual
-        pdf.output(nombre_archivo)
-
-        # enviar el archivo resultante para descarga
-        return send_file(nombre_archivo, as_attachment=True)
-
-    # GET -> mostrar formulario
-    return render_template("form.html")
-
+# tiny preview_loader para reenviar POST a /preview
+@app.route("/preview_loader", methods=["POST"])
+def preview_loader():
+    ubicacion = request.form.get("ubicacion", "")
+    fecha_inspeccion = request.form.get("fecha_inspeccion", "")
+    ingeniero = request.form.get("ingeniero", "CT")
+    return render_template("preview_loader.html",
+                           ubicacion=ubicacion,
+                           fecha_inspeccion=fecha_inspeccion,
+                           ingeniero=ingeniero)
 
 if __name__ == "__main__":
+    # En producción con Render usa gunicorn: start command -> gunicorn app:app
     app.run(debug=True)
