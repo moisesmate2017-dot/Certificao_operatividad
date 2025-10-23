@@ -7,24 +7,17 @@ import pandas as pd
 import os
 
 app = Flask(__name__)
-app.secret_key = "cambia_esto_por_una_clave_muy_segura"  # cámbiala en producción
+app.secret_key = "cambia_esto_por_una_clave_muy_segura"  # cambia en producción
 
-# ================= utilidades =================
+# = = = utilidades = = =
 def limpiar_texto(texto):
     if not isinstance(texto, str):
         return texto
-    return (
-        texto.replace("–", "-")
-             .replace("—", "-")
-             .replace("“", '"')
-             .replace("”", '"')
-             .replace("‘", "'")
-             .replace("’", "'")
-             .replace("…", "...")
-             .replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
-             .replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
-             .replace("ñ", "n").replace("Ñ", "N")
-    )
+    return (texto.replace("–", "-").replace("—", "-").replace("“", '"').replace("”", '"')
+            .replace("‘", "'").replace("’", "'").replace("…", "...")
+            .replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
+            .replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
+            .replace("ñ", "n").replace("Ñ", "N"))
 
 MESES_ES = {
     1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
@@ -32,108 +25,97 @@ MESES_ES = {
     9: "setiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"
 }
 
-DATA_FILE = "data_base.xlsm"               # archivo original (no se sobrescribe)
-UPDATED_FILE_PREFIX = "data_base_updated"  # prefijo para guardado con timestamp
+DATA_FILE = "data_base.xlsm"
+UPDATED_FILE_PREFIX = "data_base_updated"
 
-# ================= ruta principal (formulario) =================
+# = = = Ruta principal: formulario = = =
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
         ubicacion = request.form.get("ubicacion", "").strip()
-        fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # 'YYYY-MM-DD' from input type=date
+        fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()
         ingeniero = request.form.get("ingeniero", "CT").strip()
 
         if not ubicacion or not fecha_inspeccion:
             flash("Complete número de instalación y fecha de inspección.", "danger")
             return redirect(url_for("index"))
 
-        # reenviar mediante loader a /preview (POST)
+        # Directamente cargamos los datos y renderizamos la vista previa (no hay loader separado)
+        # Leer Excel y extraer cliente/direccion/tanques
+        cliente = ""
+        direccion = ""
+        tanques = []
+
+        if os.path.exists(DATA_FILE):
+            try:
+                df = pd.read_excel(DATA_FILE, sheet_name="DATA", dtype=str)
+            except Exception as e:
+                flash(f"Error leyendo {DATA_FILE}: {e}", "danger")
+                df = None
+            if df is not None:
+                # robusto: si columna Ubicacion existe, comparar como string
+                if "Ubicacion" in df.columns:
+                    df["Ubicacion_str"] = df["Ubicacion"].astype(str)
+                    df_filtrado = df[df["Ubicacion_str"] == str(ubicacion)]
+                else:
+                    df_filtrado = pd.DataFrame()
+
+                if not df_filtrado.empty:
+                    cliente = df_filtrado.iloc[0].get("Nombre Titular", "") or ""
+                    direccion = df_filtrado.iloc[0].get("Direccion", "") or ""
+                    # extraer todos los tanques asociados (cada fila representa un tanque)
+                    for _, row in df_filtrado.iterrows():
+                        capacidad = row.get("Capacidad")
+                        serie = row.get("Serie")
+                        tipo = row.get("Tipo")
+                        # validar valores no nulos
+                        if pd.notna(capacidad) and capacidad != "nan" and serie and tipo:
+                            tanques.append({
+                                "tipo": str(tipo).strip(),
+                                "capacidad": str(capacidad).strip(),
+                                "serie": str(serie).strip()
+                            })
+
+        # calcular fecha_emision = inspeccion + 7 dias
+        try:
+            fecha_dt = datetime.strptime(fecha_inspeccion, "%Y-%m-%d")
+        except Exception:
+            flash("Formato de fecha inválido; use el calendario.", "danger")
+            return redirect(url_for("index"))
+        fecha_emision_dt = fecha_dt + timedelta(days=7)
+        mes_text = MESES_ES.get(fecha_emision_dt.month, fecha_emision_dt.strftime("%B").lower())
+        fecha_emision = f"Lima, {fecha_emision_dt.day} de {mes_text} de {fecha_emision_dt.year}"
+
+        # render preview template (está llamado preview_loader.html por compatibilidad con tu estructura)
         return render_template("preview_loader.html",
                                ubicacion=ubicacion,
+                               cliente=cliente,
+                               direccion=direccion,
+                               tanques=tanques,
                                fecha_inspeccion=fecha_inspeccion,
+                               fecha_emision=fecha_emision,
                                ingeniero=ingeniero)
+
     return render_template("form.html")
 
-# ================= preview: carga datos desde excel y muestra editable =================
-@app.route("/preview", methods=["POST"])
-def preview():
-    ubicacion = request.form.get("ubicacion", "").strip()
-    fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()
-    ingeniero = request.form.get("ingeniero", "CT").strip()
-
-    # validar fecha_inspeccion
-    try:
-        fecha_dt = datetime.strptime(fecha_inspeccion, "%Y-%m-%d")
-    except Exception:
-        flash("Fecha de inspección inválida.", "danger")
-        return redirect(url_for("index"))
-
-    cliente = ""
-    direccion = ""
-    tanques = []
-
-    if os.path.exists(DATA_FILE):
-        try:
-            df = pd.read_excel(DATA_FILE, sheet_name="DATA", dtype=str)
-        except Exception as e:
-            flash(f"Error leyendo {DATA_FILE}: {e}", "danger")
-            df = None
-        if df is not None:
-            # filtrar robusto: comparar como string
-            if "Ubicacion" in df.columns:
-                df["Ubicacion_str"] = df["Ubicacion"].astype(str)
-                df_filtrado = df[df["Ubicacion_str"] == str(ubicacion)]
-            else:
-                df_filtrado = pd.DataFrame()
-
-            if not df_filtrado.empty:
-                cliente = df_filtrado.iloc[0].get("Nombre Titular", "") or ""
-                direccion = df_filtrado.iloc[0].get("Direccion", "") or ""
-                # extraer tanques de todas las filas encontradas
-                for _, row in df_filtrado.iterrows():
-                    capacidad = row.get("Capacidad")
-                    serie = row.get("Serie")
-                    tipo = row.get("Tipo")
-                    # considerar como válido si capacidad y serie y tipo no son NaN/None
-                    if pd.notna(capacidad) and capacidad != "nan" and serie and tipo:
-                        tanques.append({
-                            "tipo": str(tipo).strip(),
-                            "capacidad": str(capacidad).strip(),
-                            "serie": str(serie).strip()
-                        })
-
-    # calcular fecha_emision (inspección + 7 días)
-    fecha_emision_dt = fecha_dt + timedelta(days=7)
-    mes_text = MESES_ES.get(fecha_emision_dt.month, fecha_emision_dt.strftime("%B").lower())
-    fecha_emision = f"Lima, {fecha_emision_dt.day} de {mes_text} de {fecha_emision_dt.year}"
-
-    return render_template("preview.html",
-                           ubicacion=ubicacion,
-                           cliente=cliente,
-                           direccion=direccion,
-                           tanques=tanques,
-                           fecha_inspeccion=fecha_inspeccion,
-                           fecha_emision=fecha_emision,
-                           ingeniero=ingeniero)
-
-# ================= generar PDF (recibe datos editados) =================
+# = = = Ruta generar PDF = = =
 @app.route("/generar_pdf", methods=["POST"])
 def generar_pdf():
-    # campos básicos
+    # recolectar campos
     ubicacion = request.form.get("ubicacion", "").strip()
     cliente = request.form.get("cliente", "").strip()
     direccion = request.form.get("direccion", "").strip()
-    fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()  # may be YYYY-MM-DD
+    fecha_inspeccion = request.form.get("fecha_inspeccion", "").strip()
     fecha_emision = request.form.get("fecha_emision", "").strip()
     ingeniero = request.form.get("ingeniero", "CT").strip()
     guardar_en_base = request.form.get("guardar_en_base", "off") == "on"
 
-    # listas de tanques desde inputs tipo[], capacidad[], serie[]
+    # listas de tanques
     tipos = request.form.getlist("tipo[]")
     capacidades = request.form.getlist("capacidad[]")
     series = request.form.getlist("serie[]")
 
-    # construir lista de tanques (ignorar filas vacías)
+    # construir lista de tanques (ignorar vacías)
     tanques = []
     for t, c, s in zip(tipos, capacidades, series):
         t_ = (t or "").strip()
@@ -152,7 +134,7 @@ def generar_pdf():
             return "Fecha de inspección inválida", 400
     ano = fecha_dt.year
 
-    # guardar en base actualizada si se solicitó (no sobrescribimos .xlsm)
+    # guardar en base si se solicitó (crea archivo xlsx con timestamp)
     if guardar_en_base:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         updated_name = f"{UPDATED_FILE_PREFIX}_{timestamp}.xlsx"
@@ -161,10 +143,14 @@ def generar_pdf():
                 df_orig = pd.read_excel(DATA_FILE, sheet_name="DATA", dtype=str)
             else:
                 df_orig = pd.DataFrame(columns=["Ubicacion", "Nombre Titular", "Direccion", "Tipo", "Capacidad", "Serie"])
-            # eliminar filas de la misma ubicacion (comparar como string)
-            df_orig["Ubicacion_str"] = df_orig["Ubicacion"].astype(str)
-            df_sin = df_orig[df_orig["Ubicacion_str"] != str(ubicacion)].drop(columns=["Ubicacion_str"])
-            # preparar nuevas filas
+
+            # eliminar filas de la ubicacion actual
+            if "Ubicacion" in df_orig.columns:
+                df_orig["Ubicacion_str"] = df_orig["Ubicacion"].astype(str)
+                df_sin = df_orig[df_orig["Ubicacion_str"] != str(ubicacion)].drop(columns=["Ubicacion_str"])
+            else:
+                df_sin = df_orig
+
             nuevas = []
             if tanques:
                 for t in tanques:
@@ -192,7 +178,7 @@ def generar_pdf():
         except Exception as e:
             flash(f"Error guardando base actualizada: {e}", "danger")
 
-    # agrupar tanques por tipo y capacidad (mismo formato textual que tu script original)
+    # agrupar tanques y formar texto (idéntico al script original)
     grupo_tanques = defaultdict(lambda: defaultdict(list))
     for t in tanques:
         tipo = t.get("tipo", "").upper()
@@ -219,13 +205,12 @@ def generar_pdf():
     else:
         texto_tanques = "No se registraron tanques asociados en la base de datos para esta ubicación."
 
-    # adecuacion textos
     cliente = limpiar_texto(cliente)
     direccion = limpiar_texto(direccion)
     texto_tanques = limpiar_texto(texto_tanques)
     fecha_emision = limpiar_texto(fecha_emision)
 
-    # determinar considerar_nuevo_formato (0 si año de emisión == 2025)
+    # considerar nuevo formato si año emisión == 2025
     try:
         partes_fecha = fecha_emision.split()
         ano_emision = int(partes_fecha[-1]) if partes_fecha[-1].isdigit() else fecha_dt.year
@@ -233,12 +218,11 @@ def generar_pdf():
         ano_emision = fecha_dt.year
     considerar_nuevo_formato = 0 if ano_emision == 2025 else 1
 
-    # ================= generar PDF (manteniendo estructura y textos originales) =================
+    # === generar PDF (manteniendo tu layout original) ===
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=40)
 
-    # encabezado y logo
     pdf.set_font("Helvetica", size=10)
     logo_path = os.path.join("static", "logo_solgaspro.png")
     if os.path.exists(logo_path):
@@ -247,7 +231,6 @@ def generar_pdf():
         except Exception:
             pass
 
-    # fecha emision a la derecha
     pdf.set_xy(140, 30)
     pdf.multi_cell(60, 1, fecha_emision, align='R')
 
@@ -261,19 +244,16 @@ def generar_pdf():
     pdf.cell(0, 1, "Presente:")
     pdf.ln(3)
 
-    # referencia
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 1, "Referencia: Certificado de Operatividad Instalación GLP", align="R")
     pdf.ln(2)
 
-    # cuerpo (texto principal)
     pdf.set_font("Helvetica", size=11)
     fecha_inspeccion_formato = fecha_dt.strftime("%d/%m/%Y")
     pdf.multi_cell(0, 4, f"""Estimado(a),
 
 Sirva la presente para saludarlo(a) cordialmente e informarle que SOLGAS S.A. con fecha {fecha_inspeccion_formato} ha realizado los trabajos de Mantenimiento Preventivo Anual en la instalación de la zona del tanque de GLP y las redes de media presión en la dirección {direccion}, en cumplimiento de la Norma Técnica Peruana NTP 321.123 (REVISADA 2025) de instalaciones de consumidores directos (Capítulo 5.1.16.1) y de acuerdo con los estándares de seguridad y calidad de la empresa.""")
-
-    pdf.ln(3)
+ pdf.ln(3)
     pdf.multi_cell(0, 4, texto_tanques)
 
     pdf.ln(3)
