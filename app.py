@@ -83,8 +83,14 @@ def index():
             flash("Formato de fecha inválido; use el calendario.", "danger")
             return redirect(url_for("index"))
         fecha_emision_dt = fecha_dt + timedelta(days=7)
-        mes_text = MESES_ES.get(fecha_emision_dt.month, fecha_emision_dt.strftime("%B").lower())
-        fecha_emision = f"Lima, {fecha_emision_dt.day} de {mes_text} de {fecha_emision_dt.year}"
+        if fecha_emision_dt > datetime.today()
+            fecha_emision_dt = datetime.today()
+            mes_text = MESES_ES.get(fecha_emision_dt.month, fecha_emision_dt.strftime("%B").lower())
+            fecha_emision = f"Lima, {fecha_emision_dt.day} de {mes_text} de {fecha_emision_dt.year}"
+        elif
+            mes_text = MESES_ES.get(fecha_emision_dt.month, fecha_emision_dt.strftime("%B").lower())
+            fecha_emision = f"Lima, {fecha_emision_dt.day} de {mes_text} de {fecha_emision_dt.year}"
+        
 
         # render preview template (está llamado preview_loader.html por compatibilidad con tu estructura)
         return render_template("preview_loader.html",
