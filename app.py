@@ -83,7 +83,7 @@ def index():
             flash("Formato de fecha inválido; use el calendario.", "danger")
             return redirect(url_for("index"))
         fecha_emision_dt = fecha_dt + timedelta(days=7)
-        if fecha_emision_dt > datetime.today():
+        if fecha_emision_dt > datetime.today() :
             fecha_emision_dt = datetime.today()
             mes_text = MESES_ES.get(fecha_emision_dt.month, fecha_emision_dt.strftime("%B").lower())
             fecha_emision = f"Lima, {fecha_emision_dt.day} de {mes_text} de {fecha_emision_dt.year}"
