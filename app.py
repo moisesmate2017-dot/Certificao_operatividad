@@ -258,7 +258,7 @@ def generar_pdf():
     fecha_inspeccion_formato = fecha_dt.strftime("%d/%m/%Y")
     pdf.multi_cell(0, 4, f"""Estimado(a),
 
-Sirva la presente para saludarlo(a) cordialmente e informarle que SOLGAS S.A. con fecha {fecha_inspeccion_formato} ha realizado los trabajos de Mantenimiento Preventivo Anual en la instalación de la zona del tanque de GLP y las redes de media presión en la dirección {direccion}, en cumplimiento de la Norma Técnica Peruana NTP 321.123 (REVISADA 2025) de instalaciones de consumidores directos (Capítulo 5.1.16.1) y de acuerdo con los estándares de seguridad y calidad de la empresa.""")
+Sirva la presente para saludarlo(a) cordialmente e informarle que SOLGAS S.A. con fecha {fecha_inspeccion_formato} ha realizado los trabajos de Mantenimiento Preventivo Anual en la instalación de la zona del tanque de GLP y las redes de media presión en la dirección {direccion}, en cumplimiento de la Norma Técnica Peruana NTP 321.123 (REVISADA 2025) de instalaciones de consumidores directos (Capítulo 5.2.2) y de acuerdo con los estándares de seguridad y calidad de la empresa.""")
     pdf.ln(3)
     pdf.multi_cell(0, 4, texto_tanques)
 
