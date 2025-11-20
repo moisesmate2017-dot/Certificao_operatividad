@@ -288,7 +288,7 @@ Sirva la presente para saludarlo(a) cordialmente e informarle que SOLGAS S.A. co
         "CC": ("CC-FIRMA.png", 85, 40),
         "ML": ("ML-FIRMA.png", 75, 60),
         "CT": ("CT-FIRMA.png", 85, 40),
-        "EP": ("EP-FIRMA.png", 80, 40),
+        "LM": ("LM-FIRMA.png", 80, 40),
         "AR": ("AR-FIRMA.png", 85, 40),
     }
     firma_file, firma_x, firma_w = firma_map.get(ingeniero, ("CT-FIRMA.png", 85, 40))
