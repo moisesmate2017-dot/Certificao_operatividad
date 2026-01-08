@@ -222,7 +222,7 @@ def generar_pdf():
         ano_emision = int(partes_fecha[-1]) if partes_fecha[-1].isdigit() else fecha_dt.year
     except Exception:
         ano_emision = fecha_dt.year
-    considerar_nuevo_formato = 0 if ano_emision == 2025 else 1
+    considerar_nuevo_formato = 0 if ano_emision >= 2025 else 1
 
     # === generar PDF (manteniendo tu layout original) ===
     pdf = FPDF()
