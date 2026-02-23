@@ -274,6 +274,7 @@ Sirva la presente para saludarlo(a) cordialmente e informarle que SOLGAS S.A. co
 
     pdf.ln(3)
     pdf.multi_cell(0, 4, "El presente Certificado de Operatividad tiene un periodo de vigencia de un año.")
+    pdf.multi_cell(0, 4, "El profesional que subscribe el presente documento, es un ingeniero con experiencia mínima de 3 años en la instalación y operación de los tanques y accesorios de tanque de GLP")
 
     texto_adicional = """(1) En aras de mantener el estricto cumplimiento del marco normativo vigente, y en caso requieran hacer alguna modificación en el área que se encuentra alrededor de la zona de almacenamiento de tanques de GLP como: instalar equipos eléctricos, cámaras de seguridad, iluminación, tomacorrientes, edificaciones contiguas, equipos de aire acondicionado, cableado eléctrico, ductos, sumideros, almacenar materiales, construcción de muros perimetrales, etc. tienen la obligación de comunicar previamente al equipo técnico de Solgas lo pertinente, a fin de que puedan recibir la asesoría técnica y validación correspondiente, de tal manera que, se evite incurrir en algunos incumplimientos normativos que puedan ser materia de suspensión de la Ficha de Registro y sanciones pecuniarias por parte del ente fiscalizador, así como evitar cualquier riesgo innecesario en la instalación; cabe precisar que en caso de no informar acerca de las modificaciones que realicen en la instalación, usted será el único y exclusivo responsable por las consecuencias que se deriven de su accionar."""
 
